@@ -2,17 +2,69 @@ import pandas as pd
 import numpy as np
 from kmodes.kmodes import KModes    #https://github.com/nicodv/kmodes/
 
-colNames = ["age", "workclass", "fnlwgt", "education", "education-num", "marital-status", "occupation", "relationship",
+COL_NAMES = ["age", "workclass", "fnlwgt", "education", "education-num", "marital-status", "occupation", "relationship",
             "race", "sex", "capital-gain", "capital-loss", "hours-per-week", "native-country", "target"]
+dataStats = None    # will be computed in main
+GROUPS_NUMBER = 20
+GROUPS_NUMBER_EDUCATIONAL = 10
+
 
 def importData(file):
-    return pd.read_csv(file, names=colNames, skipinitialspace=True)
+    return pd.read_csv(file, names=COL_NAMES, skipinitialspace=True)
+
+def categorizeVariable(variable, value, groupNumber):
+    max = dataStats[variable]["max"]
+    min = dataStats[variable]["min"]
+
+    groupSize = np.floor((max-min)/groupNumber)
+
+    groupValue = (value//groupSize) * groupSize
+
+    return "{}-{}".format(groupValue, groupValue+groupSize)
+
+
+def categorizeAge(value):
+    return categorizeVariable("age", value, GROUPS_NUMBER)
+
+def categorizeFnlwgt(value):
+    return categorizeVariable("fnlwgt", value, GROUPS_NUMBER)
+
+def categorizeEducationNum(value):
+    return categorizeVariable("education-num", value, GROUPS_NUMBER_EDUCATIONAL)
+
+def categorizeCapitalGain(value):
+    return categorizeVariable("capital-gain", value, GROUPS_NUMBER)
+
+def categorizeCapitalLoss(value):
+    return categorizeVariable("capital-loss", value, GROUPS_NUMBER)
+
+def categorizeHours(value):
+    return categorizeVariable("hours-per-week", value, GROUPS_NUMBER)
+
+def categorizeData(data):
+    # TODO think about it in all cases :
+    #   - use K-mean (like Johana) ?    https://scikit-learn.org/stable/modules/generated/sklearn.cluster.KMeans.html
+    #   - Some vars might be better off removing ?
+    #   ...
+
+    data["age"] = data["age"].apply(categorizeAge)
+    data["fnlwgt"] = data["fnlwgt"].apply(categorizeFnlwgt)
+    data["education-num"] = data["education-num"].apply(categorizeEducationNum)
+    data["capital-gain"] = data["capital-gain"].apply(categorizeCapitalGain)
+    data["capital-loss"] = data["capital-loss"].apply(categorizeCapitalLoss)
+    data["hours-per-week"] = data["hours-per-week"].apply(categorizeHours)
+
+    return data
 
 def main():
+    global dataStats
     train = importData("adult.data")
     test = importData("adult.test")
 
-    for k in range(6, 7):
+    dataStats = train.describe()
+    train = categorizeData(train)
+
+    for k in range(15, 16):
         print("--- Computing clustering with {} clusters ---\n".format(k))
 
         # training
@@ -22,26 +74,24 @@ def main():
         # testing
         test["prediction"] = kmodes.predict(test.drop(columns="target"))
 
-        # Print cluster centroids of the trained model.
-        print('Centroids:')
-        print(kmodes.cluster_centroids_)
         # Print training statistics
         print('Final training cost: {}'.format(kmodes.cost_))
         print('Training iterations: {}'.format(kmodes.n_iter_))
 
         clusterIDs, stats = np.unique(kmodes.labels_, return_counts=True)
 
-        # stat for each cluster = [countAll, trainCount<=50K, trainCount>50K, clusterClass, trainingError, testCount, testCount<=50K, testCount>50K, testError]
-        stats = [[count, 0, 0, 0, 0, 0, 0, 0, 0] for count in stats] #TODO replace with np.zeros
+        # stat for each cluster = [trainCount, trainCount<=50K, trainCount>50K, clusterClass, trainingError, testCount, testCount<=50K, testCount>50K, testError]
+        stats = np.hstack((stats, np.zeros((k,8))))
         clustersStats = dict(zip(clusterIDs, stats))
 
-        # count elements
+        # count training elements
         for i, data in enumerate(train.values):
             if data[-1] == "<=50K":
                 clustersStats[kmodes.labels_[i]][1] += 1
             else:
                 clustersStats[kmodes.labels_[i]][2] += 1
 
+        # count testing elements
         for data in test[["target", "prediction"]].values:
             clustersStats[data[1]][5] += 1
 
