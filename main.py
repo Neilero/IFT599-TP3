@@ -6,17 +6,21 @@ colNames = ["age", "workclass", "fnlwgt", "education", "education-num", "marital
             "race", "sex", "capital-gain", "capital-loss", "hours-per-week", "native-country", "target"]
 
 def importData(file):
-    return pd.read_csv(file, names=colNames)
+    return pd.read_csv(file, names=colNames, skipinitialspace=True)
 
 def main():
     train = importData("adult.data")
     test = importData("adult.test")
 
-    for k in range(2, 10):
+    for k in range(6, 7):
         print("--- Computing clustering with {} clusters ---\n".format(k))
 
+        # training
         kmodes = KModes(n_clusters=k, verbose=False, n_jobs=-1) #https://github.com/nicodv/kmodes/blob/master/kmodes/kmodes.py#L294
         kmodes.fit(train.drop(columns="target"))
+
+        # testing
+        test["prediction"] = kmodes.predict(test.drop(columns="target"))
 
         # Print cluster centroids of the trained model.
         print('Centroids:')
@@ -25,15 +29,46 @@ def main():
         print('Final training cost: {}'.format(kmodes.cost_))
         print('Training iterations: {}'.format(kmodes.n_iter_))
 
-        clusterIDs, counts = np.unique(kmodes.labels_, return_counts=True)
-        counts = [[count] for count in counts]
-        clustersStats = dict(zip(clusterIDs, counts))
-        #TODO for each cluster:
-        #   count each class elements
-        #   compute precision and the other one...
-        #   (... ?)
-        #   print results
+        clusterIDs, stats = np.unique(kmodes.labels_, return_counts=True)
 
+        # stat for each cluster = [countAll, trainCount<=50K, trainCount>50K, clusterClass, trainingError, testCount, testCount<=50K, testCount>50K, testError]
+        stats = [[count, 0, 0, 0, 0, 0, 0, 0, 0] for count in stats] #TODO replace with np.zeros
+        clustersStats = dict(zip(clusterIDs, stats))
+
+        # count elements
+        for i, data in enumerate(train.values):
+            if data[-1] == "<=50K":
+                clustersStats[kmodes.labels_[i]][1] += 1
+            else:
+                clustersStats[kmodes.labels_[i]][2] += 1
+
+        for data in test[["target", "prediction"]].values:
+            clustersStats[data[1]][5] += 1
+
+            if data[0] == "<=50K":
+                clustersStats[data[1]][6] += 1
+            else:
+                clustersStats[data[1]][7] += 1
+
+        globalTrainError = 0
+        globalTestError = 0
+        for stats in clustersStats.values():
+            stats[3] = "<=50K" if np.argmax(stats[1:3]) == 0 else ">50K"
+
+            if stats[3] == "<=50K":
+                stats[4] = stats[2] / stats[0]
+                stats[8] = stats[7] / stats[5]
+            else:
+                stats[4] = stats[1] / stats[0]
+                stats[8] = stats[6] / stats[5]
+
+            print(stats)
+            globalTrainError += stats[4] * (stats[0] / train.shape[0])
+            globalTestError += stats[8] * (stats[5] / test.shape[0])
+
+
+        print("Global training error : {0:.2f} %".format(globalTrainError*100))
+        print("Global testing  error : {0:.2f} %".format(globalTestError*100))
 
 if __name__ == '__main__':
     main()
