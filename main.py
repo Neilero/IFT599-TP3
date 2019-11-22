@@ -8,10 +8,6 @@ dataStats = None    # will be computed in main
 GROUPS_NUMBER = 20
 GROUPS_NUMBER_EDUCATIONAL = 10
 
-
-def importData(file):
-    return pd.read_csv(file, names=COL_NAMES, skipinitialspace=True)
-
 def categorizeVariable(variable, value, groupNumber):
     max = dataStats[variable]["max"]
     min = dataStats[variable]["min"]
@@ -58,11 +54,12 @@ def categorizeData(data):
 
 def main():
     global dataStats
-    train = importData("adult.data")
-    test = importData("adult.test")
+    train = pd.read_csv("adult.data", names=COL_NAMES, skipinitialspace=True)
+    test = pd.read_csv("adult.test", names=COL_NAMES, skipinitialspace=True, header=1)
 
     dataStats = train.describe()
     train = categorizeData(train)
+    test = categorizeData(test)
 
     for k in range(15, 16):
         print("--- Computing clustering with {} clusters ---\n".format(k))
@@ -81,7 +78,8 @@ def main():
         clusterIDs, stats = np.unique(kmodes.labels_, return_counts=True)
 
         # stat for each cluster = [trainCount, trainCount<=50K, trainCount>50K, clusterClass, trainingError, testCount, testCount<=50K, testCount>50K, testError]
-        stats = np.hstack((stats, np.zeros((k,8))))
+        #                              0              1               2               3             4            5            6               7            8
+        stats = np.hstack((np.reshape(stats, (-1,1)), np.zeros((k,8)))).tolist()
         clustersStats = dict(zip(clusterIDs, stats))
 
         # count training elements
@@ -112,7 +110,7 @@ def main():
                 stats[4] = stats[1] / stats[0]
                 stats[8] = stats[6] / stats[5]
 
-            print(stats)
+            print("Cluster stats : ", stats)
             globalTrainError += stats[4] * (stats[0] / train.shape[0])
             globalTestError += stats[8] * (stats[5] / test.shape[0])
 
