@@ -61,6 +61,11 @@ def main():
     train = categorizeData(train)
     test = categorizeData(test)
 
+    listK = np.geomspace(2, 75, 20)
+    for i in range(listK.size):
+        listK[i] = round(listK[i])
+    print(listK)
+
     for k in range(15, 16):
         print("--- Computing clustering with {} clusters ---\n".format(k))
 
