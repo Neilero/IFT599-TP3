@@ -1,72 +1,48 @@
 import pandas as pd
 import numpy as np
 from kmodes.kmodes import KModes    #https://github.com/nicodv/kmodes/
+from sklearn.cluster import KMeans  #https://scikit-learn.org/stable/modules/generated/sklearn.cluster.KMeans.html
 
 COL_NAMES = ["age", "workclass", "fnlwgt", "education", "education-num", "marital-status", "occupation", "relationship",
             "race", "sex", "capital-gain", "capital-loss", "hours-per-week", "native-country", "target"]
-dataStats = None    # will be computed in main
-GROUPS_NUMBER = 20
-GROUPS_NUMBER_EDUCATIONAL = 10
 
-def categorizeVariable(variable, value, groupNumber):
-    max = dataStats[variable]["max"]
-    min = dataStats[variable]["min"]
+def importData():
 
-    groupSize = np.floor((max-min)/groupNumber)
+    train = pd.read_csv("adult.data", names=COL_NAMES, skipinitialspace=True)
+    train = prepareData(train)
 
-    groupValue = (value//groupSize) * groupSize
+    test = pd.read_csv("adult.test", names=COL_NAMES, skipinitialspace=True, header=1)
+    test = prepareData(test)
 
-    return "{}-{}".format(groupValue, groupValue+groupSize)
+    return train, test
 
+def prepareData(data):
+    #remove "empty" columns
+    data.drop(columns=["capital-gain", "capital-loss", "hours-per-week"], inplace=True)
 
-def categorizeAge(value):
-    return categorizeVariable("age", value, GROUPS_NUMBER)
+    #categorize numerical columns
+    categorizedData = categorizeData(data)
 
-def categorizeFnlwgt(value):
-    return categorizeVariable("fnlwgt", value, GROUPS_NUMBER)
-
-def categorizeEducationNum(value):
-    return categorizeVariable("education-num", value, GROUPS_NUMBER_EDUCATIONAL)
-
-def categorizeCapitalGain(value):
-    return categorizeVariable("capital-gain", value, GROUPS_NUMBER)
-
-def categorizeCapitalLoss(value):
-    return categorizeVariable("capital-loss", value, GROUPS_NUMBER)
-
-def categorizeHours(value):
-    return categorizeVariable("hours-per-week", value, GROUPS_NUMBER)
+    return categorizedData
 
 def categorizeData(data):
-    # TODO think about it in all cases :
-    #   - use K-mean (like Johana) ?    https://scikit-learn.org/stable/modules/generated/sklearn.cluster.KMeans.html
-    #   - Some vars might be better off removing ?
-    #   ...
-
-    data["age"] = data["age"].apply(categorizeAge)
-    data["fnlwgt"] = data["fnlwgt"].apply(categorizeFnlwgt)
-    data["education-num"] = data["education-num"].apply(categorizeEducationNum)
-    data["capital-gain"] = data["capital-gain"].apply(categorizeCapitalGain)
-    data["capital-loss"] = data["capital-loss"].apply(categorizeCapitalLoss)
-    data["hours-per-week"] = data["hours-per-week"].apply(categorizeHours)
+    data["age"] = categorizeVariable(data["age"], 10)
+    data["fnlwgt"] = categorizeVariable(data["fnlwgt"], 4)
+    data["education-num"] = categorizeVariable(data["education-num"], 6)
 
     return data
 
+def categorizeVariable(variable, k_cluster):
+    kmean = KMeans(n_clusters=k_cluster, verbose=False, n_jobs=-1)
+
+    reshapedVariable = variable.values.reshape(-1, 1)
+    categorizedVariable = kmean.fit_predict(reshapedVariable)
+    return categorizedVariable
+
 def main():
-    global dataStats
-    train = pd.read_csv("adult.data", names=COL_NAMES, skipinitialspace=True)
-    test = pd.read_csv("adult.test", names=COL_NAMES, skipinitialspace=True, header=1)
+    train, test = importData()
 
-    dataStats = train.describe()
-    train = categorizeData(train)
-    test = categorizeData(test)
-
-    listK = np.geomspace(2, 75, 20)
-    for i in range(listK.size):
-        listK[i] = round(listK[i])
-    print(listK)
-
-    for k in range(15, 16):
+    for k in np.unique(np.geomspace(2, 75, 20, dtype=int)):
         print("--- Computing clustering with {} clusters ---\n".format(k))
 
         # training
@@ -98,10 +74,13 @@ def main():
         for data in test[["target", "prediction"]].values:
             clustersStats[data[1]][5] += 1
 
-            if data[0] == "<=50K":
+            if data[0] == "<=50K.":
                 clustersStats[data[1]][6] += 1
             else:
                 clustersStats[data[1]][7] += 1
+
+        # dropping predictions after use to not influence next iteration
+        test.drop(columns="prediction", inplace=True)
 
         globalTrainError = 0
         globalTestError = 0
