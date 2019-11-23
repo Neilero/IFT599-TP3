@@ -39,6 +39,51 @@ def categorizeVariable(variable, k_cluster):
     categorizedVariable = kmean.fit_predict(reshapedVariable)
     return categorizedVariable
 
+def initStatsList(kmodes):
+    clusterIDs, stats = np.unique(kmodes.labels_, return_counts=True)
+
+    # stat for each cluster = [trainCount, trainCount<=50K, trainCount>50K, clusterClass, trainingError, testCount, testCount<=50K, testCount>50K, testError]
+    #                              0              1               2               3             4            5            6               7            8
+    stats = np.hstack((np.reshape(stats, (-1, 1)), np.zeros((kmodes.n_clusters, 8)))).tolist()
+    clustersStats = dict(zip(clusterIDs, stats))
+
+    return clustersStats
+
+def countTrainingData(clustersStats, trainData, trainLabels):
+    for i, data in enumerate(trainData.values):
+        if data[-1] == "<=50K":
+            clustersStats[trainLabels[i]][1] += 1
+        else:
+            clustersStats[trainLabels[i]][2] += 1
+
+def countTestingData(clustersStats, testData):
+    for data in testData:
+        clustersStats[data[1]][5] += 1
+
+        if data[0] == "<=50K.":
+            clustersStats[data[1]][6] += 1
+        else:
+            clustersStats[data[1]][7] += 1
+
+def computeErrors(clustersStats, trainSize, testSize):
+    globalTrainError = 0
+    globalTestError = 0
+    for stats in clustersStats.values():
+        stats[3] = "<=50K" if np.argmax(stats[1:3]) == 0 else ">50K"
+
+        if stats[3] == "<=50K":
+            stats[4] = stats[2] / stats[0]
+            stats[8] = stats[7] / stats[5]
+        else:
+            stats[4] = stats[1] / stats[0]
+            stats[8] = stats[6] / stats[5]
+
+        print("Cluster stats : ", stats)
+        globalTrainError += stats[4] * (stats[0] / trainSize)
+        globalTestError += stats[8] * (stats[5] / testSize)
+
+    return globalTrainError, globalTestError
+
 def main():
     train, test = importData()
 
@@ -56,48 +101,15 @@ def main():
         print('Final training cost: {}'.format(kmodes.cost_))
         print('Training iterations: {}'.format(kmodes.n_iter_))
 
-        clusterIDs, stats = np.unique(kmodes.labels_, return_counts=True)
-
-        # stat for each cluster = [trainCount, trainCount<=50K, trainCount>50K, clusterClass, trainingError, testCount, testCount<=50K, testCount>50K, testError]
-        #                              0              1               2               3             4            5            6               7            8
-        stats = np.hstack((np.reshape(stats, (-1,1)), np.zeros((k,8)))).tolist()
-        clustersStats = dict(zip(clusterIDs, stats))
-
-        # count training elements
-        for i, data in enumerate(train.values):
-            if data[-1] == "<=50K":
-                clustersStats[kmodes.labels_[i]][1] += 1
-            else:
-                clustersStats[kmodes.labels_[i]][2] += 1
-
-        # count testing elements
-        for data in test[["target", "prediction"]].values:
-            clustersStats[data[1]][5] += 1
-
-            if data[0] == "<=50K.":
-                clustersStats[data[1]][6] += 1
-            else:
-                clustersStats[data[1]][7] += 1
+        # compute statistics
+        clustersStats = initStatsList(kmodes)
+        countTrainingData(clustersStats, train, kmodes.labels_)
+        countTestingData(clustersStats, test[["target", "prediction"]].values)
 
         # dropping predictions after use to not influence next iteration
         test.drop(columns="prediction", inplace=True)
 
-        globalTrainError = 0
-        globalTestError = 0
-        for stats in clustersStats.values():
-            stats[3] = "<=50K" if np.argmax(stats[1:3]) == 0 else ">50K"
-
-            if stats[3] == "<=50K":
-                stats[4] = stats[2] / stats[0]
-                stats[8] = stats[7] / stats[5]
-            else:
-                stats[4] = stats[1] / stats[0]
-                stats[8] = stats[6] / stats[5]
-
-            print("Cluster stats : ", stats)
-            globalTrainError += stats[4] * (stats[0] / train.shape[0])
-            globalTestError += stats[8] * (stats[5] / test.shape[0])
-
+        globalTrainError, globalTestError = computeErrors(clustersStats, train.shape[0], test.shape[0])
 
         print("Global training error : {0:.2f} %".format(globalTrainError*100))
         print("Global testing  error : {0:.2f} %".format(globalTestError*100))
