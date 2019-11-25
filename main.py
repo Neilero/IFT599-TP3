@@ -124,7 +124,7 @@ def findGoodK(trainData, testData):
     print("Best K found : {} with test error of {} %".format(bestK, bestError*100))
     return bestK
 
-def greedyAlgorithm(k, currentVariables, trainData, testData):
+def greedyAlgorithm(k, currentVariables, trainData, testData, score_by_target = True):
     unwantedVariables = currentVariables + ["capital-gain", "capital-loss", "hours-per-week", "target"]
     variablesToTest = [var for var in COL_NAMES if var not in unwantedVariables]
 
@@ -133,7 +133,8 @@ def greedyAlgorithm(k, currentVariables, trainData, testData):
         return currentVariables
 
     bestVariable = None
-    bestError = float("inf")
+    bestVarError = float("inf")
+    bestVarScore = float("inf")
     for variable in variablesToTest:
         trainingSet = currentVariables + [variable]
         testingSet = trainingSet + ["target"]
@@ -144,14 +145,37 @@ def greedyAlgorithm(k, currentVariables, trainData, testData):
         # Compute stats
         globalTrainError, globalTestError = computeSats(kmodes, trainData, testData[testingSet])
 
-        if globalTestError < bestError:
-            bestError = globalTestError
+        # Compute score
+        varScore = score(trainData, kmodes.labels_)
+
+        if score_by_target and globalTestError < bestVarError:  # use the target to find the best variable
             bestVariable = variable
+            bestVarError = globalTestError
+            bestVarScore = varScore
+        elif not score_by_target and varScore < bestVarScore:   # use the score to find the best variable
+            bestVariable = variable
+            bestVarError = globalTestError
+            bestVarScore = varScore
 
     currentVariables.append(bestVariable)
-    print("Best set found : {} with test error of {} %".format(currentVariables, bestError*100))
+    print("Best set found : {} with test error of {:.3f} % and score of {}".format(currentVariables, bestVarError*100, bestVarScore))
 
     return greedyAlgorithm(k, currentVariables, trainData, testData)
+
+def score(data, predictions):
+    CF = np.zeros(predictions.max() +1)
+    CfIdx = 0
+    for _, cluster in data.groupby(predictions):
+        clusterItems = [ zip(*np.unique(cluster[col], return_counts=True)) for col in cluster.columns ]
+        dataItemCounts = [ dict(zip(*np.unique(data[col], return_counts=True))) for col in data.columns ]
+
+        Z = lambda item, columnIndex: data.shape[0] - dataItemCounts[columnIndex][item] + 1
+        clusterItemWeights = [ count**3 * Z(item, colIdx) for colIdx, col in enumerate(clusterItems) for item, count in col ]
+
+        CF[CfIdx] = 1/cluster.shape[0] * np.sum(clusterItemWeights)
+        CfIdx += 1
+
+    return 1/(data.shape[0]**2) * np.sum( CF )
 
 def main():
     trainData, testData = importData()
@@ -159,7 +183,7 @@ def main():
     # k = findGoodK(trainData, testData)
     k = 16
 
-    greedyAlgorithm(k, [], trainData, testData)
+    greedyAlgorithm(k, [], trainData, testData, score_by_target=False)
 
 if __name__ == '__main__':
     main()
