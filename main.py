@@ -10,7 +10,7 @@ COL_NAMES = ["age", "workclass", "fnlwgt", "education", "education-num", "marita
 def importData():
     """
     import data from files and prepare them for analyse
-    :return:
+    :return: training and testing DataFrame with only categorical data
     """
     train = pd.read_csv("adult.data", names=COL_NAMES, skipinitialspace=True)
     train = prepareData(train)
@@ -21,6 +21,12 @@ def importData():
     return train, test
 
 def prepareData(data):
+    """
+    prepare data for categorical clustering
+    remove undesired variables (i.e. variable with a lot of unknown value
+    :param data: the DataFrame to prepare
+    :return: the DataFrame edited and ready for categorical clustering
+    """
     #remove "empty" columns
     data.drop(columns=["capital-gain", "capital-loss"], inplace=True)
 
@@ -30,6 +36,11 @@ def prepareData(data):
     return categorizedData
 
 def categorizeData(data):
+    """
+    Categorize the numerical variables
+    :param data: a DataFrame with numerical variables
+    :return: a DataFrame with only categorical variables
+    """
     data["age"] = categorizeVariable(data["age"], 10)
     data["fnlwgt"] = categorizeVariable(data["fnlwgt"], 4)
     data["education-num"] = categorizeVariable(data["education-num"], 6)
@@ -38,6 +49,12 @@ def categorizeData(data):
     return data
 
 def categorizeVariable(variable, k_cluster):
+    """
+    Categorize a numerical variable with the K-mean algorithm and the given cluster number
+    :param variable: the numerical variable
+    :param k_cluster: the number of wanted cluster for the K-mean algorithm
+    :return: the categorized variable
+    """
     kmean = KMeans(n_clusters=k_cluster, verbose=False, n_jobs=-1)
 
     reshapedVariable = variable.values.reshape(-1, 1)
@@ -45,6 +62,12 @@ def categorizeVariable(variable, k_cluster):
     return categorizedVariable
 
 def initStatsList(kmodes):
+    """
+    Initialize a list for computing stats with zeros except for the first column containing the
+    number of training elements for each cluster
+    :param kmodes: the K-modes object used for the clustering
+    :return: a list of size (cluster number, 9) with only the first column computed (the others are zeros)
+    """
     clusterIDs, stats = np.unique(kmodes.labels_, return_counts=True)
 
     # stat for each cluster = [trainCount, trainCount<=50K, trainCount>50K, clusterClass, trainingError, testCount, testCount<=50K, testCount>50K, testError]
@@ -55,6 +78,13 @@ def initStatsList(kmodes):
     return clustersStats
 
 def countTrainingData(clustersStats, trainData, trainLabels):
+    """
+    Count the number of training data of each target class for each cluster
+    and save the result in the given clustersStats matrix
+    :param clustersStats: the stats matrix where to save the result
+    :param trainData: the training DataFrame
+    :param trainLabels: the training labels (or predictions for the clustering)
+    """
     for i, data in enumerate(trainData.values):
         if data[-1] == "<=50K":
             clustersStats[trainLabels[i]][1] += 1
@@ -62,6 +92,14 @@ def countTrainingData(clustersStats, trainData, trainLabels):
             clustersStats[trainLabels[i]][2] += 1
 
 def countTestingData(clustersStats, testData):
+    """
+    Count the number of testing data of each target class for each cluster
+    and save the result in the given clustersStats matrix
+    The given testData is supposed to be a matrix of size (2, number of testing data)
+    and with the first column being the targets and the second the prediction of the clustering
+    :param clustersStats: the stats matrix where to save the result
+    :param testData: the test data matrix with the target and the predictions
+    """
     for data in testData:
         clustersStats[data[1]][5] += 1
 
@@ -71,6 +109,14 @@ def countTestingData(clustersStats, testData):
             clustersStats[data[1]][7] += 1
 
 def computeErrors(clustersStats, trainSize, testSize):
+    """
+    Compute the training and testing errors for each clusters and save it in the given stats matrix
+    Returns the global training and testing errors
+    :param clustersStats: the stats matrix where to save the result
+    :param trainSize: the number of training data
+    :param testSize: the number of testing data
+    :return: the global training and testing errors
+    """
     globalTrainError = 0
     globalTestError = 0
     for stats in clustersStats.values():
@@ -90,6 +136,13 @@ def computeErrors(clustersStats, trainSize, testSize):
     return globalTrainError, globalTestError
 
 def computeSats(kmodes, trainData, testData):
+    """
+    Compute and returns the global training and testing errors
+    :param kmodes: the K-modes object used for the clustering
+    :param trainData: the training DataFrame
+    :param testData: the testing DataFrame
+    :return: the global training and testing errors
+    """
     # testing
     testData["prediction"] = kmodes.predict(testData.drop(columns="target"))
 
@@ -105,6 +158,13 @@ def computeSats(kmodes, trainData, testData):
     return globalTrainError, globalTestError
 
 def findGoodK(trainData, testData):
+    """
+    Search the best K (number of cluster) for the K-modes algorithm between 2 and 75
+    The search is done with a 20-long sample logarithmically distributed
+    :param trainData: the training DataFrame
+    :param testData: the testing DataFrame used to compare the K values
+    :return: the best found K between 2 and 75
+    """
     bestK = None
     bestError = float("inf")
 
@@ -129,6 +189,13 @@ def findGoodK(trainData, testData):
     return bestK
 
 def score(data, predictions):
+    """
+    The scoring function used to compare different clustering based on the importance of each cluster's elements
+    This method does not use the targets of the data
+    :param data: the DataFrame containing the data for which to compute the score
+    :param predictions: the predictions for the data of the given DataFrame of the clustering to score
+    :return: the score of the given data clustered according to the given predictions
+    """
     CF = np.zeros(predictions.max() +1)
     CfIdx = 0
 
@@ -145,7 +212,19 @@ def score(data, predictions):
 
     return 1/(data.shape[0]**2) * np.sum( CF )
 
-def greedyAlgorithm(k, currentVariables, trainData, testData, score_by_target = True):
+def greedyAlgorithm(k, trainData, testData, currentVariables=None, score_by_target=True):
+    """
+    Implementation of the greedy algorithm. The best variables are found using either the test error
+    or the score according to the score_by_target parameter and considering the given k (number of cluster).
+    :param k: the number of cluster for the K-modes algorithm
+    :param trainData: the training DataFrame
+    :param testData: the testing DataFrame
+    :param currentVariables: the currently selected variables. Set it to None for the first iteration
+    :param score_by_target: if True the best variable will be find via global test error, if False, by score
+    :return: The list of variables in order of finding throughout the algorithm
+    """
+    if currentVariables is None:
+        currentVariables = []
     unwantedVariables = currentVariables + ["capital-gain", "capital-loss", "target"]
     variablesToTest = [var for var in COL_NAMES if var not in unwantedVariables]
 
@@ -167,7 +246,7 @@ def greedyAlgorithm(k, currentVariables, trainData, testData, score_by_target = 
         globalTrainError, globalTestError = computeSats(kmodes, trainData, testData[testingSet])
 
         # Compute score
-        varScore = score(trainData, kmodes.labels_)
+        varScore = score(trainData.drop(columns="target"), kmodes.labels_)
 
         if score_by_target and globalTestError < bestVarError:  # use the target to find the best variable
             bestVariable = variable
@@ -181,7 +260,7 @@ def greedyAlgorithm(k, currentVariables, trainData, testData, score_by_target = 
     currentVariables.append(bestVariable)
     print("Best set found : {} with test error of {:.3f} % and score of {:.3f}".format(currentVariables, bestVarError*100, bestVarScore))
 
-    return greedyAlgorithm(k, currentVariables, trainData, testData)
+    return greedyAlgorithm(k, trainData, testData, currentVariables, score_by_target)
 
 def main():
     trainData, testData = importData()
@@ -189,7 +268,7 @@ def main():
     k = findGoodK(trainData, testData)
     # k = 16
 
-    greedyAlgorithm(k, [], trainData, testData, score_by_target=False)
+    greedyAlgorithm(k, trainData, testData, score_by_target=False)
 
 if __name__ == '__main__':
     main()
