@@ -8,7 +8,10 @@ COL_NAMES = ["age", "workclass", "fnlwgt", "education", "education-num", "marita
              "race", "sex", "capital-gain", "capital-loss", "hours-per-week", "native-country", "target"]
 
 def importData():
-
+    """
+    import data from files and prepare them for analyse
+    :return:
+    """
     train = pd.read_csv("adult.data", names=COL_NAMES, skipinitialspace=True)
     train = prepareData(train)
 
@@ -19,7 +22,7 @@ def importData():
 
 def prepareData(data):
     #remove "empty" columns
-    data.drop(columns=["capital-gain", "capital-loss", "hours-per-week"], inplace=True)
+    data.drop(columns=["capital-gain", "capital-loss"], inplace=True)
 
     #categorize numerical columns
     categorizedData = categorizeData(data)
@@ -30,6 +33,7 @@ def categorizeData(data):
     data["age"] = categorizeVariable(data["age"], 10)
     data["fnlwgt"] = categorizeVariable(data["fnlwgt"], 4)
     data["education-num"] = categorizeVariable(data["education-num"], 6)
+    data["hours-per-week"] = categorizeVariable(data["hours-per-week"], 5)
 
     return data
 
@@ -124,8 +128,25 @@ def findGoodK(trainData, testData):
     print("Best K found : {} with test error of {} %".format(bestK, bestError*100))
     return bestK
 
+def score(data, predictions):
+    CF = np.zeros(predictions.max() +1)
+    CfIdx = 0
+
+    dataItemCounts = [ dict(zip(*np.unique(data[col], return_counts=True))) for col in data.columns ]
+
+    for _, cluster in data.groupby(predictions):
+        clusterItems = [ zip(*np.unique(cluster[col], return_counts=True)) for col in cluster.columns ]
+
+        Z = lambda item, columnIndex: data.shape[0] - dataItemCounts[columnIndex][item] + 1
+        clusterItemWeights = [ count**3 * Z(item, colIdx) for colIdx, col in enumerate(clusterItems) for item, count in col ]
+
+        CF[CfIdx] = 1/cluster.shape[0] * np.sum(clusterItemWeights)
+        CfIdx += 1
+
+    return 1/(data.shape[0]**2) * np.sum( CF )
+
 def greedyAlgorithm(k, currentVariables, trainData, testData, score_by_target = True):
-    unwantedVariables = currentVariables + ["capital-gain", "capital-loss", "hours-per-week", "target"]
+    unwantedVariables = currentVariables + ["capital-gain", "capital-loss", "target"]
     variablesToTest = [var for var in COL_NAMES if var not in unwantedVariables]
 
     # stop condition
@@ -158,32 +179,15 @@ def greedyAlgorithm(k, currentVariables, trainData, testData, score_by_target = 
             bestVarScore = varScore
 
     currentVariables.append(bestVariable)
-    print("Best set found : {} with test error of {:.3f} % and score of {}".format(currentVariables, bestVarError*100, bestVarScore))
+    print("Best set found : {} with test error of {:.3f} % and score of {:.3f}".format(currentVariables, bestVarError*100, bestVarScore))
 
     return greedyAlgorithm(k, currentVariables, trainData, testData)
-
-def score(data, predictions):
-    CF = np.zeros(predictions.max() +1)
-    CfIdx = 0
-
-    dataItemCounts = [ dict(zip(*np.unique(data[col], return_counts=True))) for col in data.columns ]
-
-    for _, cluster in data.groupby(predictions):
-        clusterItems = [ zip(*np.unique(cluster[col], return_counts=True)) for col in cluster.columns ]
-
-        Z = lambda item, columnIndex: data.shape[0] - dataItemCounts[columnIndex][item] + 1
-        clusterItemWeights = [ count**3 * Z(item, colIdx) for colIdx, col in enumerate(clusterItems) for item, count in col ]
-
-        CF[CfIdx] = 1/cluster.shape[0] * np.sum(clusterItemWeights)
-        CfIdx += 1
-
-    return 1/(data.shape[0]**2) * np.sum( CF )
 
 def main():
     trainData, testData = importData()
 
-    # k = findGoodK(trainData, testData)
-    k = 16
+    k = findGoodK(trainData, testData)
+    # k = 16
 
     greedyAlgorithm(k, [], trainData, testData, score_by_target=False)
 
