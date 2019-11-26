@@ -165,9 +165,11 @@ def greedyAlgorithm(k, currentVariables, trainData, testData, score_by_target = 
 def score(data, predictions):
     CF = np.zeros(predictions.max() +1)
     CfIdx = 0
+
+    dataItemCounts = [ dict(zip(*np.unique(data[col], return_counts=True))) for col in data.columns ]
+
     for _, cluster in data.groupby(predictions):
         clusterItems = [ zip(*np.unique(cluster[col], return_counts=True)) for col in cluster.columns ]
-        dataItemCounts = [ dict(zip(*np.unique(data[col], return_counts=True))) for col in data.columns ]
 
         Z = lambda item, columnIndex: data.shape[0] - dataItemCounts[columnIndex][item] + 1
         clusterItemWeights = [ count**3 * Z(item, colIdx) for colIdx, col in enumerate(clusterItems) for item, count in col ]
