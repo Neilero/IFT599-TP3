@@ -181,8 +181,9 @@ def findGoodK(trainData, testData):
         print("Global training error : {0:.2f} %".format(globalTrainError*100))
         print("Global testing  error : {0:.2f} %\n".format(globalTestError*100))
 
-        if globalTestError < bestError:
-            bestError = globalTestError
+        kerror = (globalTrainError + globalTestError) / 2
+        if kerror < bestError:
+            bestError = kerror
             bestK = k
 
     print("Best K found : {} with test error of {} %".format(bestK, bestError*100))
