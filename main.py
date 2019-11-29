@@ -234,7 +234,8 @@ def greedyAlgorithm(k, trainData, testData, currentVariables=None, score_by_targ
         return currentVariables
 
     bestVariable = None
-    bestVarError = float("inf")
+    bestVarErrorTrain = float("inf")
+    bestVarErrorTest = float("inf")
     bestVarScore = float("inf")
     for variable in variablesToTest:
         trainingSet = currentVariables + [variable]
@@ -249,17 +250,23 @@ def greedyAlgorithm(k, trainData, testData, currentVariables=None, score_by_targ
         # Compute score
         varScore = score(trainData.drop(columns="target"), kmodes.labels_)
 
-        if score_by_target and globalTestError < bestVarError:  # use the target to find the best variable
+        varError = (globalTrainError + globalTestError) / 2
+        bestError = (bestVarErrorTrain + bestVarErrorTest) / 2
+        if score_by_target and varError < bestError:  # use the target to find the best variable
             bestVariable = variable
-            bestVarError = globalTestError
+            bestVarErrorTrain = globalTrainError
+            bestVarErrorTest = globalTestError
             bestVarScore = varScore
         elif not score_by_target and varScore < bestVarScore:   # use the score to find the best variable
             bestVariable = variable
-            bestVarError = globalTestError
+            bestVarErrorTrain = globalTrainError
+            bestVarErrorTest = globalTestError
             bestVarScore = varScore
 
     currentVariables.append(bestVariable)
-    print("Best set found : {} with test error of {:.3f} % and score of {:.3f}".format(currentVariables, bestVarError*100, bestVarScore))
+    print("Best set found : {} with test error of {:.3f} %, train error of {:.3f} and score of {:.3f}".format(
+        currentVariables, bestVarErrorTest*100, bestVarErrorTrain*100, bestVarScore)
+    )
 
     return greedyAlgorithm(k, trainData, testData, currentVariables, score_by_target)
 
