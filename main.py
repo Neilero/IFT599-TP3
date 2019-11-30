@@ -274,7 +274,7 @@ def main():
     trainData, testData = importData()
 
     k = findGoodK(trainData, testData)
-    # k = 16
+    # k = 51
 
     greedyAlgorithm(k, trainData, testData, score_by_target=False)
 
